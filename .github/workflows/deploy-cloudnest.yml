@@ -1,0 +1,48 @@
+name: Deploy CloudNest App to EKS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: cloudnest-app
+  EKS_CLUSTER_NAME: cloudnest-eks
+  IMAGE_TAG: latest
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          IMAGE_URI=$ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/cloudnest-app:latest
+
+          docker build -t cloudnest-app ./app
+          docker tag cloudnest-app:latest $IMAGE_URI
+          docker push $IMAGE_URI
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region us-east-1 --name cloudnest-eks
+
+      - name: Restart Kubernetes deployment
+        run: |
+          kubectl rollout restart deployment/cloudnest-app
+          kubectl rollout status deployment/cloudnest-app
